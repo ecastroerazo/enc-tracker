@@ -1,0 +1,6 @@
+name: inversiones-eres
+recipe: pantheon
+config:
+  framework: wordpress
+  site: inversiones-eres
+  id: 042a47bd-6ab6-4642-a7e6-085f5e2d179a
