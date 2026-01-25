@@ -12,11 +12,6 @@
         <div class="flex items-center justify-between h-full px-4 lg:max-w-[1290px] lg:mx-auto w-full">
             <img src="<?php echo get_template_directory_uri(); ?>/images/inversionesERES.png" alt="Inversiones ERES Logo" class="h-10 w-auto">
             
-            <nav class="hidden md:flex items-center space-x-6">
-                <a href="<?php echo home_url('/home'); ?>" class="text-white hover:text-[#4B7EDD] transition-colors duration-200 font-medium">Home</a>
-                <a href="<?php echo home_url('/sobre-nosotros'); ?>" class="text-white hover:text-[#4B7EDD] transition-colors duration-200 font-medium">Sobre Nosotros</a>
-            </nav>
-             
             <!-- Mobile menu button -->
             <button class="md:hidden text-white hover:text-[#4B7EDD] focus:outline-none transition-colors duration-200 cursor-pointer" id="mobile-menu-button">
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
