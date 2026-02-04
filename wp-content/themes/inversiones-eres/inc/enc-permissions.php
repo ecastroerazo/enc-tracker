@@ -20,4 +20,4 @@ function enc_setup_capabilities() {
     }
 }
 
-add_action('init', 'enc_setup_capabilities');
+//add_action('init', 'enc_setup_capabilities');
