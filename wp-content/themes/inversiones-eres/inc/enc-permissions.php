@@ -17,7 +17,6 @@ function enc_setup_capabilities() {
     $employee = get_role('editor'); // Using 'editor' role as employee role
     if ($employee) {
         $employee->add_cap('enc_add_income');
-        // Note: NOT giving enc_manage_withdrawals or enc_view_reports to employees
     }
 }
 
