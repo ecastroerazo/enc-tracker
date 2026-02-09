@@ -46,6 +46,7 @@ function enc_administrator_portal_shortcode($atts = [])
         'dashboard'   => ['label' => __('Dashboard', 'enc'),   'render' => 'enc_dashboard_view'],
         'incomes'     => ['label' => __('Incomes', 'enc'),     'render' => 'enc_incomes_view'],
         'withdrawals' => ['label' => __('Withdrawals', 'enc'), 'render' => 'enc_withdrawals_view'],
+        'invoices'    => ['label' => __('Invoices', 'enc'),    'render' => 'enc_invoices_view'],
     ];
 
     $current_tab = sanitize_key($_GET['tab'] ?? 'dashboard');

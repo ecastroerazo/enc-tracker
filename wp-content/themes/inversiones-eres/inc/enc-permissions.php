@@ -11,6 +11,8 @@ function enc_setup_capabilities() {
         $admin->add_cap('enc_add_income');
         $admin->add_cap('enc_manage_withdrawals');
         $admin->add_cap('enc_view_reports');
+        $admin->add_cap('enc_manage_invoices');
+        $admin->add_cap('enc_manage_companies');
     }
     
     // Add limited capabilities to employees (only income submission)

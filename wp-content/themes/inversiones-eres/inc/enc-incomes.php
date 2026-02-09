@@ -158,6 +158,30 @@ function enc_incomes_view()
     $date_to = enc_parse_date($_GET['date_to'] ?? '', current_time('Y-m-d'));
     $stores = enc_get_stores();
 
+    $base_incomes_url = add_query_arg('tab', 'incomes', get_permalink());
+    $log_form_url = add_query_arg('view', 'log', $base_incomes_url);
+    $show_form_view = isset($_GET['view']) && $_GET['view'] === 'log';
+    $can_add_income = current_user_can('enc_add_income');
+
+    if ($show_form_view && $can_add_income) {
+        ob_start();
+        ?>
+        <div class="mx-auto max-w-3xl space-y-5">
+            <?php if (!empty($messages)): ?>
+                <div class="space-y-3"><?php echo $messages; ?></div>
+            <?php endif; ?>
+
+            <a href="<?php echo esc_url($base_incomes_url); ?>" class="inline-flex items-center gap-2 text-sm font-semibold text-slate-600 hover:text-slate-900">
+                <span aria-hidden="true">←</span>
+                <span><?php esc_html_e('Back to income reports', 'enc'); ?></span>
+            </a>
+
+            <?php echo enc_income_form_shortcode(); ?>
+        </div>
+        <?php
+        return ob_get_clean();
+    }
+
     $where = "WHERE 1=1";
     $params = [];
     if ($store_id > 0) {
@@ -248,7 +272,14 @@ function enc_incomes_view()
                             <?php echo esc_html($record_count); ?>
                             recent entries
                         </div>
-
+                        <?php if ($can_add_income): ?>
+                            <a href="<?php echo esc_url($log_form_url); ?>" class="inline-flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition-all hover:bg-slate-800 hover:shadow-lg active:scale-95">
+                                <span><?php esc_html_e('Record Income', 'enc'); ?></span>
+                                <svg class="h-4 w-4 opacity-70" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M5 12h14m-7-7l7 7-7 7" stroke-linecap="round" stroke-linejoin="round" />
+                                </svg>
+                            </a>
+                        <?php endif; ?>
                     </div>
                 </div>
 
@@ -591,7 +622,7 @@ function enc_income_form_shortcode()
     // Success/error messages
     $messages = '';
     if (isset($_GET['success'])) {
-        $messages .= '<div class="mb-4 p-3 bg-green-100 border border-green-300 text-green-700 rounded-md">Income recorded successfully!</div>';
+        $messages .= '<div class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900">Income recorded successfully!</div>';
     } elseif (isset($_GET['error'])) {
         $error_code = intval($_GET['error']);
         $error_messages = [
@@ -599,45 +630,76 @@ function enc_income_form_shortcode()
             2 => 'Failed to save income. Please try again.'
         ];
         $message = $error_messages[$error_code] ?? 'An error occurred. Please try again.';
-        $messages .= '<div class="mb-4 p-3 bg-red-100 border border-red-300 text-red-700 rounded-md">' . esc_html($message) . '</div>';
+        $messages .= '<div class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-900">' . esc_html($message) . '</div>';
     }
+
+    $default_date = current_time('Y-m-d');
 
     ob_start();
     ?>
-    <?php echo $messages; ?>
-    <form
-        method="post" class="max-w-lg p-6 border border-gray-300 rounded-lg bg-white shadow-sm">
-        <?php wp_nonce_field('enc_income_submit', 'enc_income_nonce'); ?>
+    <div class="mx-auto max-w-3xl space-y-6">
+        <?php if (!empty($messages)): ?>
+            <div class="space-y-3"><?php echo $messages; ?></div>
+        <?php endif; ?>
 
-        <div class="mb-4">
-            <label class="block text-sm font-medium text-gray-700 mb-2">Store *</label>
-            <select name="store_id" required class="w-full h-11 px-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <option value="">Select Store</option>
-                <?php foreach ($stores as $store): ?>
-                    <option value="<?php echo esc_attr($store->id); ?>"><?php echo esc_html($store->name); ?></option>
-                <?php endforeach; ?>
-            </select>
-        </div>
+        <section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div class="mb-6">
+                <p class="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400"><?php esc_html_e('Income', 'enc'); ?></p>
+                <h2 class="mt-2 text-2xl font-semibold text-slate-900"><?php esc_html_e('Record new income', 'enc'); ?></h2>
+                <p class="mt-1 text-sm text-slate-600"><?php esc_html_e('Log store revenue with accurate dates, amounts, and contextual notes.', 'enc'); ?></p>
+            </div>
 
-        <div class="mb-4">
-            <label class="block text-sm font-medium text-gray-700 mb-2">Date *</label>
-            <input type="date" name="entry_date" value="<?php echo current_time('Y-m-d'); ?>" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
-        </div>
+            <form method="post" class="space-y-6">
+                <?php wp_nonce_field('enc_income_submit', 'enc_income_nonce'); ?>
 
-        <div class="mb-4">
-            <label class="block text-sm font-medium text-gray-700 mb-2">Amount *</label>
-            <input type="number" name="amount" step="0.01" min="0.01" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
-        </div>
+                <div class="space-y-2">
+                    <label class="text-xs font-semibold uppercase tracking-wide text-slate-500"><?php esc_html_e('Store *', 'enc'); ?></label>
+                    <select name="store_id" required class="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10">
+                        <option value=""><?php esc_html_e('Select Store', 'enc'); ?></option>
+                        <?php foreach ($stores as $store): ?>
+                            <option value="<?php echo esc_attr($store->id); ?>"><?php echo esc_html($store->name); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
 
-        <div class="mb-4">
-            <label class="block text-sm font-medium text-gray-700 mb-2">Notes</label>
-            <textarea name="notes" rows="3" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"></textarea>
-        </div>
+                <div class="grid grid-cols-1 gap-5 md:grid-cols-2">
+                    <div class="space-y-2">
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500"><?php esc_html_e('Date *', 'enc'); ?></label>
+                        <div class="relative">
+                            <input type="date" name="entry_date" value="<?php echo esc_attr($default_date); ?>" required class="h-11 w-full rounded-2xl border border-slate-200 bg-white pl-11 pr-4 text-sm font-medium text-slate-700 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10">
+                            <span class="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">
+                                <svg class="h-4 w-4" viewbox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                    <rect x="3" y="4" width="18" height="18" rx="4"></rect>
+                                    <path d="M16 2v4"></path>
+                                    <path d="M8 2v4"></path>
+                                    <path d="M3 10h18"></path>
+                                </svg>
+                            </span>
+                        </div>
+                    </div>
 
-        <div class="mt-6">
-            <button type="submit" name="enc_income_submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-md transition duration-200">Submit Income</button>
-        </div>
-    </form>
+                    <div class="space-y-2">
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500"><?php esc_html_e('Amount *', 'enc'); ?></label>
+                        <div class="relative">
+                            <span class="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-slate-400">$</span>
+                            <input type="number" name="amount" step="0.01" min="0.01" required class="h-11 w-full rounded-2xl border border-slate-200 bg-white pl-10 pr-4 text-right text-sm font-semibold text-slate-900 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="space-y-2">
+                    <label class="text-xs font-semibold uppercase tracking-wide text-slate-500"><?php esc_html_e('Notes', 'enc'); ?></label>
+                    <textarea name="notes" rows="4" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10 resize-none"></textarea>
+                </div>
+
+                <div>
+                    <button type="submit" name="enc_income_submit" class="inline-flex h-12 w-full items-center justify-center rounded-2xl bg-slate-900 px-4 text-sm font-semibold text-white transition hover:bg-slate-800">
+                        <?php esc_html_e('Submit Income', 'enc'); ?>
+                    </button>
+                </div>
+            </form>
+        </section>
+    </div>
     <?php
     return ob_get_clean();
 }

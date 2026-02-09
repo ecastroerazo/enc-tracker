@@ -21,6 +21,7 @@ $modules = [
     'enc-permissions.php',   // ENC Tracker user permissions
     'enc-dashboard.php',     // ENC Tracker dashboard functionality
     'enc-incomes.php',       // ENC Tracker incomes module
+    'enc-invoices.php',      // ENC Tracker invoices module
     'enc-withdrawals.php',   // ENC Tracker withdrawals module
     'enc-shortcodes.php',    // ENC Tracker shortcodes
 ];

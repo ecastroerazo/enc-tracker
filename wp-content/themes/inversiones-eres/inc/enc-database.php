@@ -12,6 +12,8 @@ function enc_tracker_setup() {
     $stores_table = $wpdb->prefix . 'enc_stores';
     $income_table = $wpdb->prefix . 'enc_incomes';
     $withdrawals_table = $wpdb->prefix . 'enc_withdrawals';
+    $companies_table = $wpdb->prefix . 'enc_companies';
+    $invoices_table = $wpdb->prefix . 'enc_invoices';
 
     // Create tables
     $sql_stores = "CREATE TABLE $stores_table (
@@ -49,9 +51,48 @@ function enc_tracker_setup() {
         KEY store_date (store_id, withdrawal_date)
     ) $charset_collate;";
 
+    $sql_companies = "CREATE TABLE $companies_table (
+        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+        name VARCHAR(255) NOT NULL,
+        contact_person VARCHAR(255) NULL,
+        phone VARCHAR(50) NULL,
+        notes TEXT NULL,
+        is_active TINYINT(1) NOT NULL DEFAULT 1,
+        created_by BIGINT UNSIGNED NOT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (id),
+        KEY active_name (is_active, name)
+    ) $charset_collate;";
+
+    $sql_invoices = "CREATE TABLE $invoices_table (
+        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+        store_id BIGINT UNSIGNED NOT NULL,
+        company_id BIGINT UNSIGNED NULL,
+        invoice_number VARCHAR(100) NOT NULL,
+        client_name VARCHAR(255) NOT NULL,
+        amount DECIMAL(10,2) NOT NULL,
+        invoice_date DATE NOT NULL,
+        due_date DATE NOT NULL,
+        status ENUM('pending', 'paid', 'overdue', 'cancelled') NOT NULL DEFAULT 'pending',
+        description TEXT NULL,
+        notes TEXT NULL,
+        created_by BIGINT UNSIGNED NOT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (id),
+        UNIQUE KEY store_invoice_number (store_id, invoice_number),
+        KEY store_id (store_id),
+        KEY store_status (store_id, status),
+        KEY company_id (company_id),
+        KEY due_date (due_date)
+    ) $charset_collate;";
+
+
+
     dbDelta($sql_stores);
     dbDelta($sql_incomes);
     dbDelta($sql_withdrawals);
+    dbDelta($sql_companies);
+    dbDelta($sql_invoices);
 
     // Add default stores
     $stores = [

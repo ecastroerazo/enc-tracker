@@ -23,6 +23,38 @@ if (!function_exists('enc_get_stores')) {
     }
 }
 
+if (!function_exists('enc_get_companies')) {
+    function enc_get_companies($args = []) {
+        global $wpdb;
+
+        $defaults = [
+            'include_inactive' => false,
+            'order' => 'ASC',
+        ];
+        $args = wp_parse_args($args, $defaults);
+
+        $order = strtoupper($args['order']) === 'DESC' ? 'DESC' : 'ASC';
+        $where = $args['include_inactive'] ? '1=1' : 'is_active = 1';
+
+        $sql = "SELECT id, name, contact_person, phone, is_active FROM {$wpdb->prefix}enc_companies WHERE $where ORDER BY name $order";
+
+        return $wpdb->get_results($sql);
+    }
+}
+
+if (!function_exists('enc_get_invoice_statuses')) {
+    function enc_get_invoice_statuses() {
+        $statuses = [
+            'pending'  => __('Pending', 'enc'),
+            'paid'     => __('Paid', 'enc'),
+            'overdue'  => __('Overdue', 'enc'),
+            'cancelled'=> __('Cancelled', 'enc'),
+        ];
+
+        return apply_filters('enc_invoice_statuses', $statuses);
+    }
+}
+
 if (!function_exists('enc_stream_csv')) {
     function enc_stream_csv($filename, array $headers, array $rows) {
         nocache_headers();

@@ -87,12 +87,9 @@ function enc_withdrawals_view()
     if ($show_form_view) {
         ob_start();
         ?>
-        <div
-            class="mx-auto max-w-2xl space-y-5">
+        <div class="mx-auto max-w-3xl space-y-5">
             <?php if (!empty($messages)): ?>
-                <div
-                    class="space-y-3"><?php echo $messages; ?>
-                </div>
+                <div class="space-y-3"><?php echo $messages; ?></div>
             <?php endif; ?>
 
             <a href="<?php echo esc_url($base_withdrawals_url); ?>" class="inline-flex items-center gap-2 text-sm font-semibold text-slate-600 hover:text-slate-900">
@@ -102,15 +99,17 @@ function enc_withdrawals_view()
 
             <section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
                 <div class="mb-6">
-                    <p class="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400"><?php esc_html_e('Withdrawal', 'enc'); ?></p>
-                    <h2 class="mt-2 text-2xl font-semibold text-slate-900"><?php esc_html_e('Log a withdrawal', 'enc'); ?></h2>
-                    <p class="mt-1 text-sm text-slate-600"><?php esc_html_e('Record payouts, expenses, or adjustments right from this panel. Entries post instantly to the report.', 'enc'); ?></p>
+                    <p class="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400"><?php esc_html_e('Withdrawals', 'enc'); ?></p>
+                    <h2 class="mt-2 text-2xl font-semibold text-slate-900"><?php esc_html_e('Record new withdrawal', 'enc'); ?></h2>
+                    <p class="mt-1 text-sm text-slate-600"><?php esc_html_e('Capture payouts, expenses, or adjustments with consistent categorization and notes.', 'enc'); ?></p>
                 </div>
 
-                <?php echo enc_withdrawal_form_shortcode([
-                    'variant' => 'card',
-                    'show_messages' => 'false',
-                ]); ?>
+                <div>
+                    <?php echo enc_withdrawal_form_shortcode([
+                        'variant' => 'minimal',
+                        'show_messages' => 'false',
+                    ]); ?>
+                </div>
             </section>
         </div>
         <?php
