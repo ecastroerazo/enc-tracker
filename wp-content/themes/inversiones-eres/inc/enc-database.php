@@ -3,6 +3,10 @@
  * ENC Tracker Database Setup and Helper Functions
  */
 
+if (!defined('ENC_TRACKER_DB_VERSION')) {
+    define('ENC_TRACKER_DB_VERSION', '20260208');
+}
+
 // Setup database tables on theme activation
 function enc_tracker_setup() {
     global $wpdb;
@@ -108,5 +112,16 @@ function enc_tracker_setup() {
         }
     }
 
+    update_option('enc_tracker_db_version', ENC_TRACKER_DB_VERSION);
 }
+
+function enc_tracker_maybe_upgrade() {
+    $current_version = get_option('enc_tracker_db_version');
+    if ($current_version !== ENC_TRACKER_DB_VERSION) {
+        enc_tracker_setup();
+    }
+}
+
 add_action('after_switch_theme', 'enc_tracker_setup');
+add_action('init', 'enc_tracker_maybe_upgrade');
+add_action('admin_init', 'enc_tracker_maybe_upgrade');

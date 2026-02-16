@@ -8,6 +8,10 @@ add_action('template_redirect', 'enc_handle_invoice_forms');
 
 function enc_invoices_view()
 {
+    if (isset($_GET['action']) && $_GET['action'] === 'edit' && isset($_GET['id'])) {
+        return enc_invoice_edit_shortcode(['id' => intval($_GET['id'])]);
+    }
+
     if (!current_user_can('enc_manage_invoices') && !current_user_can('manage_options')) {
         return '<p>Access denied.</p>';
     }
@@ -24,9 +28,22 @@ function enc_invoices_view()
     $companies = enc_get_companies();
     $statuses = enc_get_invoice_statuses();
 
+    $base_invoices_url = add_query_arg('tab', 'invoices', get_permalink());
+    $add_invoice_url = add_query_arg('view', 'add', $base_invoices_url);
+
+    if (isset($_GET['view']) && $_GET['view'] === 'add') {
+        return enc_invoice_add_view([
+            'base_url' => $base_invoices_url,
+            'stores' => $stores,
+            'companies' => $companies,
+        ]);
+    }
+
     $messages = '';
     if (isset($_GET['invoice_success'])) {
         $messages .= '<div class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900">Invoice recorded successfully!</div>';
+    } elseif (isset($_GET['invoice_updated'])) {
+        $messages .= '<div class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900">Invoice updated successfully!</div>';
     } elseif (isset($_GET['invoice_error'])) {
         $error_code = intval($_GET['invoice_error']);
         $error_messages = [
@@ -164,7 +181,7 @@ function enc_invoices_view()
                             <span class="h-2 w-2 rounded-full bg-rose-500"></span>
                             $<?php echo enc_money($open_amount); ?> open
                         </div>
-                        <a href="#enc-invoice-form-card" class="inline-flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition-all hover:bg-slate-800 hover:shadow-lg active:scale-95">
+                        <a href="<?php echo esc_url($add_invoice_url); ?>" class="inline-flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition-all hover:bg-slate-800 hover:shadow-lg active:scale-95">
                             <span>Add Invoice</span>
                             <svg class="h-4 w-4 opacity-70" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M5 12h14m-7-7l7 7-7 7" stroke-linecap="round" stroke-linejoin="round" />
@@ -247,8 +264,8 @@ function enc_invoices_view()
             </div>
         </form>
 
-        <div class="grid grid-cols-1 gap-6 xl:grid-cols-3">
-            <div class="space-y-6 xl:col-span-2">
+        <div class="space-y-6">
+            <div class="space-y-6">
                 <?php if (empty($invoices)): ?>
                     <div class="rounded-3xl border border-slate-100 bg-white px-6 py-12 text-center shadow-sm">
                         <p class="text-base font-semibold text-slate-800">No invoices found</p>
@@ -280,6 +297,11 @@ function enc_invoices_view()
                                             'id' => $invoice->id,
                                             'nonce' => wp_create_nonce('delete_invoice_' . $invoice->id),
                                         ], get_permalink());
+                                        $edit_url = add_query_arg([
+                                            'tab' => 'invoices',
+                                            'action' => 'edit',
+                                            'id' => $invoice->id,
+                                        ], get_permalink());
                                         ?>
                                         <tr class="hover:bg-slate-50">
                                             <td class="px-4 py-4 font-semibold text-slate-900"><?php echo esc_html($invoice->invoice_number); ?></td>
@@ -291,7 +313,10 @@ function enc_invoices_view()
                                             <td class="px-4 py-4 text-right font-semibold text-slate-900">$<?php echo enc_money($invoice->amount); ?></td>
                                             <td class="px-4 py-4"><?php echo enc_invoice_status_badge($invoice->status); ?></td>
                                             <td class="px-4 py-4 text-center">
-                                                <a href="<?php echo esc_url($delete_url); ?>" class="inline-flex items-center gap-1 rounded-full bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-100" onclick="return confirm('Delete this invoice?');">Delete</a>
+                                                <div class="inline-flex items-center gap-2">
+                                                    <a href="<?php echo esc_url($edit_url); ?>" class="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-200">Edit</a>
+                                                    <a href="<?php echo esc_url($delete_url); ?>" class="inline-flex items-center gap-1 rounded-full bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-100" onclick="return confirm('Delete this invoice?');">Delete</a>
+                                                </div>
                                             </td>
                                         </tr>
                                     <?php endforeach; ?>
@@ -305,15 +330,69 @@ function enc_invoices_view()
                     </div>
                 <?php endif; ?>
             </div>
+        </div>
+    </div>
+    <?php
+    return ob_get_clean();
+}
 
-            <div class="space-y-6">
-                <?php echo enc_render_invoice_form([
-                    'stores' => $stores,
-                    'companies' => $companies,
-                ]); ?>
+function enc_invoice_add_view($args = [])
+{
+    if (!current_user_can('enc_manage_invoices') && !current_user_can('manage_options')) {
+        return '<p>Access denied.</p>';
+    }
 
-                <?php echo enc_render_company_form(); ?>
-            </div>
+    $defaults = [
+        'base_url' => add_query_arg('tab', 'invoices', get_permalink()),
+        'stores' => [],
+        'companies' => [],
+    ];
+    $args = wp_parse_args($args, $defaults);
+
+    $messages = '';
+    if (isset($_GET['invoice_error'])) {
+        $error_code = intval($_GET['invoice_error']);
+        $error_messages = [
+            1 => 'Please complete all required fields and select valid options.',
+            2 => 'Unable to save invoice. Please try again.',
+        ];
+        $message = $error_messages[$error_code] ?? 'An error occurred. Please try again.';
+        $messages .= '<div class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-900">' . esc_html($message) . '</div>';
+    }
+
+    if (isset($_GET['company_success'])) {
+        $messages .= '<div class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900">Company added successfully!</div>';
+    } elseif (isset($_GET['company_error'])) {
+        $error_code = intval($_GET['company_error']);
+        $error_messages = [
+            1 => 'Company name is required.',
+            2 => 'Unable to save company. Please try again.',
+        ];
+        $message = $error_messages[$error_code] ?? 'An error occurred. Please try again.';
+        $messages .= '<div class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-900">' . esc_html($message) . '</div>';
+    }
+
+    $back_url = $args['base_url'];
+
+    ob_start();
+    ?>
+    <div class="mx-auto max-w-4xl space-y-5">
+        <?php if (!empty($messages)): ?>
+            <div class="space-y-3"><?php echo $messages; ?></div>
+        <?php endif; ?>
+
+        <a href="<?php echo esc_url($back_url); ?>" class="inline-flex items-center gap-2 text-sm font-semibold text-slate-600 hover:text-slate-900">
+            <span aria-hidden="true">&larr;</span>
+            <span><?php esc_html_e('Back to invoice ledger', 'enc'); ?></span>
+        </a>
+
+        <div class="space-y-6">
+            <?php echo enc_render_invoice_form([
+                'stores' => $args['stores'],
+                'companies' => $args['companies'],
+            ]); ?>
+
+            <?php echo enc_render_company_form(); ?>
         </div>
     </div>
     <?php
@@ -416,10 +495,12 @@ function enc_handle_invoice_forms()
         $status_options = enc_get_invoice_statuses();
         $has_required_fields = $valid_store && !empty($invoice_number) && !empty($client_name) && $amount > 0 && isset($status_options[$status]);
 
-        $redirect_base = add_query_arg('tab', 'invoices', strtok((is_ssl() ? 'https://' : 'http://') . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI'], '?'));
+        $base_url = strtok((is_ssl() ? 'https://' : 'http://') . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI'], '?');
+        $ledger_url = add_query_arg('tab', 'invoices', $base_url);
+        $add_view_url = add_query_arg(['tab' => 'invoices', 'view' => 'add'], $base_url);
 
         if (!$has_required_fields) {
-            wp_safe_redirect(add_query_arg('invoice_error', 1, $redirect_base));
+            wp_safe_redirect(add_query_arg('invoice_error', 1, $add_view_url));
             exit;
         }
 
@@ -445,7 +526,106 @@ function enc_handle_invoice_forms()
         $result = $wpdb->insert($wpdb->prefix . 'enc_invoices', $data, $format);
 
         if ($result) {
-            wp_safe_redirect(add_query_arg('invoice_success', 1, $redirect_base));
+            wp_safe_redirect(add_query_arg('invoice_success', 1, $ledger_url));
+        } else {
+            wp_safe_redirect(add_query_arg('invoice_error', 2, $add_view_url));
+        }
+        exit;
+    }
+
+    // Handle invoice updates
+    if (isset($_POST['enc_invoice_update'])) {
+        if (!current_user_can('enc_manage_invoices') && !current_user_can('manage_options')) {
+            return;
+        }
+        if (!wp_verify_nonce($_POST['enc_invoice_nonce'] ?? '', 'enc_invoice_update')) {
+            wp_die('Security check failed.');
+        }
+
+        global $wpdb;
+
+        $invoice_id = intval($_POST['invoice_id'] ?? 0);
+        $store_id = intval($_POST['store_id'] ?? 0);
+        $company_id = intval($_POST['company_id'] ?? 0);
+        $invoice_number = sanitize_text_field($_POST['invoice_number'] ?? '');
+        $client_name = sanitize_text_field($_POST['client_name'] ?? '');
+        $amount = floatval($_POST['amount'] ?? 0);
+        $invoice_date = enc_parse_date($_POST['invoice_date'] ?? '', current_time('Y-m-d'));
+        $due_date = enc_parse_date($_POST['due_date'] ?? '', current_time('Y-m-d'));
+        $status = sanitize_key($_POST['status'] ?? 'pending');
+        $description = sanitize_textarea_field($_POST['description'] ?? '');
+        $notes = sanitize_textarea_field($_POST['notes'] ?? '');
+
+        $redirect_base = add_query_arg('tab', 'invoices', strtok((is_ssl() ? 'https://' : 'http://') . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI'], '?'));
+
+        if ($invoice_id <= 0) {
+            wp_safe_redirect(add_query_arg('invoice_error', 2, $redirect_base));
+            exit;
+        }
+
+        $existing_invoice = $wpdb->get_var($wpdb->prepare("SELECT id FROM {$wpdb->prefix}enc_invoices WHERE id = %d", $invoice_id));
+        if (!$existing_invoice) {
+            wp_safe_redirect(add_query_arg('invoice_error', 2, $redirect_base));
+            exit;
+        }
+
+        $valid_store = $wpdb->get_var($wpdb->prepare("SELECT id FROM {$wpdb->prefix}enc_stores WHERE id = %d AND is_active = 1", $store_id));
+        $valid_company = null;
+        if ($company_id > 0) {
+            $valid_company = $wpdb->get_var($wpdb->prepare("SELECT id FROM {$wpdb->prefix}enc_companies WHERE id = %d", $company_id));
+        }
+
+        $status_options = enc_get_invoice_statuses();
+        $has_required_fields = $valid_store && !empty($invoice_number) && !empty($client_name) && $amount > 0 && isset($status_options[$status]);
+
+        if (!$has_required_fields) {
+            wp_safe_redirect(add_query_arg('invoice_error', 1, $redirect_base));
+            exit;
+        }
+
+        $data = [
+            'store_id' => $store_id,
+            'invoice_number' => $invoice_number,
+            'client_name' => $client_name,
+            'amount' => $amount,
+            'invoice_date' => $invoice_date,
+            'due_date' => $due_date,
+            'status' => $status,
+            'description' => $description,
+            'notes' => $notes,
+        ];
+        $format = ['%d', '%s', '%s', '%f', '%s', '%s', '%s', '%s', '%s'];
+
+        $reset_company = false;
+        if ($company_id > 0 && $valid_company) {
+            $data['company_id'] = $company_id;
+            $format[] = '%d';
+        } else {
+            $reset_company = true;
+        }
+
+        $result = $wpdb->update(
+            $wpdb->prefix . 'enc_invoices',
+            $data,
+            ['id' => $invoice_id],
+            $format,
+            ['%d']
+        );
+
+        $operation_success = ($result !== false);
+
+        if ($reset_company) {
+            $null_result = $wpdb->query($wpdb->prepare(
+                "UPDATE {$wpdb->prefix}enc_invoices SET company_id = NULL WHERE id = %d",
+                $invoice_id
+            ));
+            if ($null_result === false) {
+                $operation_success = false;
+            }
+        }
+
+        if ($operation_success) {
+            wp_safe_redirect(add_query_arg('invoice_updated', 1, $redirect_base));
         } else {
             wp_safe_redirect(add_query_arg('invoice_error', 2, $redirect_base));
         }
@@ -469,7 +649,8 @@ function enc_handle_invoice_forms()
         $notes = sanitize_textarea_field($_POST['company_notes'] ?? '');
         $is_active = isset($_POST['is_active']) ? 1 : 0;
 
-        $redirect_base = add_query_arg('tab', 'invoices', strtok((is_ssl() ? 'https://' : 'http://') . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI'], '?'));
+        $base_url = strtok((is_ssl() ? 'https://' : 'http://') . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI'], '?');
+        $redirect_base = add_query_arg(['tab' => 'invoices', 'view' => 'add'], $base_url);
 
         if (empty($name)) {
             wp_safe_redirect(add_query_arg('company_error', 1, $redirect_base));
@@ -519,6 +700,158 @@ function enc_handle_invoice_forms()
     }
 }
 
+add_shortcode('enc_invoice_edit', 'enc_invoice_edit_shortcode');
+function enc_invoice_edit_shortcode($atts = [])
+{
+    if (!is_user_logged_in() || (!current_user_can('enc_manage_invoices') && !current_user_can('manage_options'))) {
+        return '<p>Access denied.</p>';
+    }
+
+    $atts = shortcode_atts(['id' => 0], $atts, 'enc_invoice_edit');
+    $invoice_id = intval($atts['id']) ?: intval($_GET['id'] ?? 0);
+
+    if ($invoice_id <= 0) {
+        return '<p>Invalid invoice ID.</p>';
+    }
+
+    global $wpdb;
+    $invoice = $wpdb->get_row($wpdb->prepare(
+        "SELECT * FROM {$wpdb->prefix}enc_invoices WHERE id = %d",
+        $invoice_id
+    ));
+
+    if (!$invoice) {
+        return '<p>Invoice not found.</p>';
+    }
+
+    $stores = enc_get_stores();
+    if (empty($stores)) {
+        return '<p>No stores available. Please add a store first.</p>';
+    }
+
+    $companies = enc_get_companies();
+    $statuses = enc_get_invoice_statuses();
+
+    $messages = '';
+    if (isset($_GET['invoice_error'])) {
+        $error_code = intval($_GET['invoice_error']);
+        $error_messages = [
+            1 => 'Please complete all required fields and select valid options.',
+            2 => 'Unable to save invoice. Please try again.',
+        ];
+        $message = $error_messages[$error_code] ?? 'An error occurred. Please try again.';
+        $messages .= '<div class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-900">' . esc_html($message) . '</div>';
+    }
+
+    $back_url = remove_query_arg(['action', 'id']);
+    $today = current_time('timestamp');
+    $invoice_date = !empty($invoice->invoice_date) ? date('Y-m-d', strtotime($invoice->invoice_date)) : date('Y-m-d', $today);
+    $due_date = !empty($invoice->due_date) ? date('Y-m-d', strtotime($invoice->due_date)) : date('Y-m-d', $today);
+    $amount_value = number_format((float) $invoice->amount, 2, '.', '');
+    $current_company_id = $invoice->company_id ? (int) $invoice->company_id : 0;
+
+    ob_start();
+    ?>
+    <div class="mx-auto max-w-3xl space-y-5">
+        <?php if (!empty($messages)): ?>
+            <div class="space-y-3"><?php echo $messages; ?></div>
+        <?php endif; ?>
+
+        <a href="<?php echo esc_url($back_url); ?>" class="inline-flex items-center gap-2 text-sm font-semibold text-slate-600 hover:text-slate-900">
+            <span aria-hidden="true">&larr;</span>
+            <span><?php esc_html_e('Back to invoice ledger', 'enc'); ?></span>
+        </a>
+
+        <section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div class="mb-6">
+                <p class="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400"><?php esc_html_e('Invoices', 'enc'); ?></p>
+                <h2 class="mt-2 text-2xl font-semibold text-slate-900"><?php esc_html_e('Edit invoice', 'enc'); ?></h2>
+                <p class="mt-1 text-sm text-slate-600"><?php esc_html_e('Update billing details, company links, dates, and notes from a focused workspace.', 'enc'); ?></p>
+            </div>
+
+            <form method="post" class="space-y-5">
+                <?php wp_nonce_field('enc_invoice_update', 'enc_invoice_nonce'); ?>
+                <input type="hidden" name="invoice_id" value="<?php echo esc_attr($invoice->id); ?>">
+
+                <div class="space-y-1.5">
+                    <label class="text-xs font-semibold uppercase tracking-wide text-slate-500"><?php esc_html_e('Store *', 'enc'); ?></label>
+                    <select name="store_id" required class="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10">
+                        <option value=""><?php esc_html_e('Select Store', 'enc'); ?></option>
+                        <?php foreach ($stores as $store): ?>
+                            <option value="<?php echo esc_attr($store->id); ?>" <?php selected($store->id, $invoice->store_id); ?>><?php echo esc_html($store->name); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+
+                <div class="space-y-1.5">
+                    <label class="text-xs font-semibold uppercase tracking-wide text-slate-500"><?php esc_html_e('Invoice Number *', 'enc'); ?></label>
+                    <input type="text" name="invoice_number" value="<?php echo esc_attr($invoice->invoice_number); ?>" required class="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10">
+                </div>
+
+                <div class="space-y-1.5">
+                    <label class="text-xs font-semibold uppercase tracking-wide text-slate-500"><?php esc_html_e('Client Name *', 'enc'); ?></label>
+                    <input type="text" name="client_name" value="<?php echo esc_attr($invoice->client_name); ?>" required class="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10">
+                </div>
+
+                <div class="space-y-1.5">
+                    <label class="text-xs font-semibold uppercase tracking-wide text-slate-500"><?php esc_html_e('Company', 'enc'); ?></label>
+                    <select name="company_id" class="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10">
+                        <option value="" <?php selected(0, $current_company_id); ?>><?php esc_html_e('Unassigned', 'enc'); ?></option>
+                        <?php foreach ($companies as $company): ?>
+                            <option value="<?php echo esc_attr($company->id); ?>" <?php selected($company->id, $current_company_id); ?>><?php echo esc_html($company->name); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+
+                <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <div class="space-y-1.5">
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500"><?php esc_html_e('Invoice Date *', 'enc'); ?></label>
+                        <input type="date" name="invoice_date" value="<?php echo esc_attr($invoice_date); ?>" required class="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10">
+                    </div>
+                    <div class="space-y-1.5">
+                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500"><?php esc_html_e('Due Date *', 'enc'); ?></label>
+                        <input type="date" name="due_date" value="<?php echo esc_attr($due_date); ?>" required class="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10">
+                    </div>
+                </div>
+
+                <div class="space-y-1.5">
+                    <label class="text-xs font-semibold uppercase tracking-wide text-slate-500"><?php esc_html_e('Amount *', 'enc'); ?></label>
+                    <div class="relative">
+                        <span class="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-slate-400">$</span>
+                        <input type="number" name="amount" value="<?php echo esc_attr($amount_value); ?>" step="0.01" min="0.01" required class="h-11 w-full rounded-2xl border border-slate-200 bg-white pl-10 pr-4 text-right text-sm font-semibold text-slate-900 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10">
+                    </div>
+                </div>
+
+                <div class="space-y-1.5">
+                    <label class="text-xs font-semibold uppercase tracking-wide text-slate-500"><?php esc_html_e('Status *', 'enc'); ?></label>
+                    <select name="status" class="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10">
+                        <?php foreach ($statuses as $key => $label): ?>
+                            <option value="<?php echo esc_attr($key); ?>" <?php selected($key, $invoice->status); ?>><?php echo esc_html($label); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+
+                <div class="space-y-1.5">
+                    <label class="text-xs font-semibold uppercase tracking-wide text-slate-500"><?php esc_html_e('Description', 'enc'); ?></label>
+                    <textarea name="description" rows="3" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10 resize-none"><?php echo esc_textarea($invoice->description); ?></textarea>
+                </div>
+
+                <div class="space-y-1.5">
+                    <label class="text-xs font-semibold uppercase tracking-wide text-slate-500"><?php esc_html_e('Internal Notes', 'enc'); ?></label>
+                    <textarea name="notes" rows="3" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10 resize-none"><?php echo esc_textarea($invoice->notes); ?></textarea>
+                </div>
+
+                <div class="flex flex-col gap-3 sm:flex-row">
+                    <button type="submit" name="enc_invoice_update" class="inline-flex h-12 flex-1 items-center justify-center rounded-2xl bg-slate-900 px-4 text-sm font-semibold text-white transition hover:bg-slate-800"><?php esc_html_e('Save invoice', 'enc'); ?></button>
+                    <a href="<?php echo esc_url($back_url); ?>" class="inline-flex h-12 flex-1 items-center justify-center rounded-2xl border border-slate-200 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"><?php esc_html_e('Cancel', 'enc'); ?></a>
+                </div>
+            </form>
+        </section>
+    </div>
+    <?php
+    return ob_get_clean();
+}
+
 function enc_render_invoice_form($args = [])
 {
     $defaults = [
@@ -532,9 +865,22 @@ function enc_render_invoice_form($args = [])
     $default_due = date('Y-m-d', $today + (DAY_IN_SECONDS * 15));
     $statuses = enc_get_invoice_statuses();
 
+    $form_values = [
+        'store_id' => '',
+        'invoice_number' => '',
+        'client_name' => '',
+        'company_id' => '',
+        'invoice_date' => $default_date,
+        'due_date' => $default_due,
+        'amount' => '',
+        'status' => 'pending',
+        'description' => '',
+        'notes' => '',
+    ];
+
     ob_start();
     ?>
-    <section id="enc-invoice-form-card" class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+    <section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
         <div class="mb-5">
             <p class="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400"><?php esc_html_e('Invoices', 'enc'); ?></p>
             <h3 class="mt-1 text-xl font-semibold text-slate-900"><?php esc_html_e('Record new invoice', 'enc'); ?></h3>
@@ -552,27 +898,27 @@ function enc_render_invoice_form($args = [])
                     <select name="store_id" required class="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10">
                         <option value=""><?php esc_html_e('Select Store', 'enc'); ?></option>
                         <?php foreach ($args['stores'] as $store): ?>
-                            <option value="<?php echo esc_attr($store->id); ?>"><?php echo esc_html($store->name); ?></option>
+                            <option value="<?php echo esc_attr($store->id); ?>" <?php selected($store->id, $form_values['store_id']); ?>><?php echo esc_html($store->name); ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
 
                 <div class="space-y-1.5">
                     <label class="text-xs font-semibold uppercase tracking-wide text-slate-500"><?php esc_html_e('Invoice Number *', 'enc'); ?></label>
-                    <input type="text" name="invoice_number" required class="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10" placeholder="INV-0001">
+                    <input type="text" name="invoice_number" value="<?php echo esc_attr($form_values['invoice_number']); ?>" required class="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10" placeholder="INV-0001">
                 </div>
 
                 <div class="space-y-1.5">
                     <label class="text-xs font-semibold uppercase tracking-wide text-slate-500"><?php esc_html_e('Client Name *', 'enc'); ?></label>
-                    <input type="text" name="client_name" required class="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10">
+                    <input type="text" name="client_name" value="<?php echo esc_attr($form_values['client_name']); ?>" required class="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10">
                 </div>
 
                 <div class="space-y-1.5">
                     <label class="text-xs font-semibold uppercase tracking-wide text-slate-500"><?php esc_html_e('Company', 'enc'); ?></label>
                     <select name="company_id" class="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10">
-                        <option value=""><?php esc_html_e('Unassigned', 'enc'); ?></option>
+                        <option value="" <?php selected('', $form_values['company_id']); ?>><?php esc_html_e('Unassigned', 'enc'); ?></option>
                         <?php foreach ($args['companies'] as $company): ?>
-                            <option value="<?php echo esc_attr($company->id); ?>"><?php echo esc_html($company->name); ?></option>
+                            <option value="<?php echo esc_attr($company->id); ?>" <?php selected($company->id, $form_values['company_id']); ?>><?php echo esc_html($company->name); ?></option>
                         <?php endforeach; ?>
                     </select>
                     <?php if (empty($args['companies'])): ?>
@@ -583,11 +929,11 @@ function enc_render_invoice_form($args = [])
                 <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
                     <div class="space-y-1.5">
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500"><?php esc_html_e('Invoice Date *', 'enc'); ?></label>
-                        <input type="date" name="invoice_date" value="<?php echo esc_attr($default_date); ?>" required class="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10">
+                        <input type="date" name="invoice_date" value="<?php echo esc_attr($form_values['invoice_date']); ?>" required class="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10">
                     </div>
                     <div class="space-y-1.5">
                         <label class="text-xs font-semibold uppercase tracking-wide text-slate-500"><?php esc_html_e('Due Date *', 'enc'); ?></label>
-                        <input type="date" name="due_date" value="<?php echo esc_attr($default_due); ?>" required class="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10">
+                        <input type="date" name="due_date" value="<?php echo esc_attr($form_values['due_date']); ?>" required class="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10">
                     </div>
                 </div>
 
@@ -595,7 +941,7 @@ function enc_render_invoice_form($args = [])
                     <label class="text-xs font-semibold uppercase tracking-wide text-slate-500"><?php esc_html_e('Amount *', 'enc'); ?></label>
                     <div class="relative">
                         <span class="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-slate-400">$</span>
-                        <input type="number" name="amount" step="0.01" min="0.01" required class="h-11 w-full rounded-2xl border border-slate-200 bg-white pl-10 pr-4 text-right text-sm font-semibold text-slate-900 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10">
+                        <input type="number" name="amount" value="<?php echo esc_attr($form_values['amount']); ?>" step="0.01" min="0.01" required class="h-11 w-full rounded-2xl border border-slate-200 bg-white pl-10 pr-4 text-right text-sm font-semibold text-slate-900 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10">
                     </div>
                 </div>
 
@@ -603,23 +949,25 @@ function enc_render_invoice_form($args = [])
                     <label class="text-xs font-semibold uppercase tracking-wide text-slate-500"><?php esc_html_e('Status *', 'enc'); ?></label>
                     <select name="status" class="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10">
                         <?php foreach ($statuses as $key => $label): ?>
-                            <option value="<?php echo esc_attr($key); ?>"><?php echo esc_html($label); ?></option>
+                            <option value="<?php echo esc_attr($key); ?>" <?php selected($key, $form_values['status']); ?>><?php echo esc_html($label); ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
 
                 <div class="space-y-1.5">
                     <label class="text-xs font-semibold uppercase tracking-wide text-slate-500"><?php esc_html_e('Description', 'enc'); ?></label>
-                    <textarea name="description" rows="3" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10 resize-none"></textarea>
+                    <textarea name="description" rows="3" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10 resize-none"><?php echo esc_textarea($form_values['description']); ?></textarea>
                 </div>
 
                 <div class="space-y-1.5">
                     <label class="text-xs font-semibold uppercase tracking-wide text-slate-500"><?php esc_html_e('Internal Notes', 'enc'); ?></label>
-                    <textarea name="notes" rows="3" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10 resize-none"></textarea>
+                    <textarea name="notes" rows="3" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10 resize-none"><?php echo esc_textarea($form_values['notes']); ?></textarea>
                 </div>
 
                 <div>
-                    <button type="submit" name="enc_invoice_submit" class="inline-flex h-12 w-full items-center justify-center rounded-2xl bg-slate-900 px-4 text-sm font-semibold text-white transition hover:bg-slate-800"><?php esc_html_e('Submit Invoice', 'enc'); ?></button>
+                    <button type="submit" name="enc_invoice_submit" class="inline-flex h-12 w-full items-center justify-center rounded-2xl bg-slate-900 px-4 text-sm font-semibold text-white transition hover:bg-slate-800">
+                        <?php esc_html_e('Submit Invoice', 'enc'); ?>
+                    </button>
                 </div>
             </form>
         <?php endif; ?>
