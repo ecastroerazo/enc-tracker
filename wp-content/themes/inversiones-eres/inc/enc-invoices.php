@@ -1,23 +1,53 @@
 <?php
 /**
  * ENC Tracker Invoices Module
+ *
+ * This module handles all logic for displaying, filtering, exporting, adding, editing, and deleting invoice records for the ENC Tracker system.
+ *
+ * Main features:
+ *  - Render report filters for invoices
+ *  - Export invoices as CSV
+ *  - Display invoices table with summary
+ *  - Handle add, edit, and delete invoice actions
+ *  - Provide shortcodes for invoice and company forms and editing
  */
 
+
+// =============================
+// Action Hooks for Export and Form Handling
+// =============================
 add_action('template_redirect', 'enc_handle_invoice_export');
 add_action('template_redirect', 'enc_handle_invoice_forms');
 
+// =============================
+// Main Invoices View
+// =============================
+
+/**
+ * Main invoices view: displays the invoice table, summary, filter, and handles view switching.
+ * Handles:
+ *  - Edit mode (delegates to edit shortcode)
+ *  - Success/error messages
+ *  - Filtering and summary
+ *  - Table rendering
+ *  - Export and add invoice links
+ *
+ */
 function enc_invoices_view()
 {
+    // Check if we're in edit mode (delegates to edit form if so)
     if (isset($_GET['action']) && $_GET['action'] === 'edit' && isset($_GET['id'])) {
         return enc_invoice_edit_shortcode(['id' => intval($_GET['id'])]);
     }
 
+    // Permission check
     if (!current_user_can('enc_manage_invoices') && !current_user_can('manage_options')) {
         return '<p>Access denied.</p>';
     }
 
     global $wpdb;
 
+    // Gather filters and supporting data
     $store_id = intval($_GET['store_id'] ?? 0);
     $company_id = intval($_GET['company_id'] ?? 0);
     $status_filter = sanitize_key($_GET['status'] ?? '');
@@ -31,6 +61,7 @@ function enc_invoices_view()
     $base_invoices_url = add_query_arg('tab', 'invoices', get_permalink());
     $add_invoice_url = add_query_arg('view', 'add', $base_invoices_url);
 
+    // Show add invoice view if requested
     if (isset($_GET['view']) && $_GET['view'] === 'add') {
         return enc_invoice_add_view([
             'base_url' => $base_invoices_url,
@@ -39,6 +70,7 @@ function enc_invoices_view()
         ]);
     }
 
+    // Prepare success/error messages for user feedback
     $messages = '';
     if (isset($_GET['invoice_success'])) {
         $messages .= '<div class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900">Invoice recorded successfully!</div>';
@@ -70,6 +102,7 @@ function enc_invoices_view()
         $messages .= '<div class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-900">' . esc_html($message) . '</div>';
     }
 
+    // Build SQL WHERE clause for filtering invoices
     $where = 'WHERE 1=1';
     $params = [];
 
@@ -336,6 +369,9 @@ function enc_invoices_view()
     return ob_get_clean();
 }
 
+/**
+ * Renders the add invoice view, including the invoice and company forms.
+ */
 function enc_invoice_add_view($args = [])
 {
     if (!current_user_can('enc_manage_invoices') && !current_user_can('manage_options')) {
@@ -399,6 +435,14 @@ function enc_invoice_add_view($args = [])
     return ob_get_clean();
 }
 
+// =============================
+// CSV Export Handler
+// =============================
+
+/**
+ * Handles exporting invoice records as CSV if the correct GET param is set.
+ * Checks permissions, filters by store/company/date/status, and streams the CSV file.
+ */
 function enc_handle_invoice_export()
 {
     if (!isset($_GET['enc_export']) || $_GET['enc_export'] !== 'invoices') {
@@ -462,6 +506,15 @@ function enc_handle_invoice_export()
     enc_stream_csv('enc-invoices-' . date('Ymd') . '.csv', ['Invoice #', 'Client', 'Store', 'Company', 'Amount', 'Invoice Date', 'Due Date', 'Status'], $rows);
 }
 
+// =============================
+// Invoice and Company Form Handling (Add/Edit/Delete)
+// =============================
+
+/**
+ * Handles POST submissions for adding, editing, and deleting invoices and companies.
+ * - Validates permissions and nonces
+ * - Handles redirects and error/success feedback
+ */
 function enc_handle_invoice_forms()
 {
     // Handle invoice submission
@@ -700,6 +753,14 @@ function enc_handle_invoice_forms()
     }
 }
 
+// =============================
+// Shortcodes for Invoice Edit, Invoice Form, and Company Form
+// =============================
+
+/**
+ * Shortcode: [enc_invoice_edit]
+ * Renders the edit form for a specific invoice record (admin only).
+ */
 add_shortcode('enc_invoice_edit', 'enc_invoice_edit_shortcode');
 function enc_invoice_edit_shortcode($atts = [])
 {
@@ -852,6 +913,10 @@ function enc_invoice_edit_shortcode($atts = [])
     return ob_get_clean();
 }
 
+/**
+ * Renders the form for submitting a new invoice record (for users with permission).
+ * Used by the [enc_invoice_form] shortcode.
+ */
 function enc_render_invoice_form($args = [])
 {
     $defaults = [
@@ -976,6 +1041,10 @@ function enc_render_invoice_form($args = [])
     return ob_get_clean();
 }
 
+/**
+ * Renders the form for submitting a new company record (for users with permission).
+ * Used by the [enc_company_form] shortcode.
+ */
 function enc_render_company_form()
 {
     if (!current_user_can('enc_manage_companies') && !current_user_can('manage_options')) {
@@ -1028,6 +1097,9 @@ function enc_render_company_form()
     return ob_get_clean();
 }
 
+/**
+ * Renders a status badge for an invoice status value.
+ */
 function enc_invoice_status_badge($status)
 {
     $map = [
@@ -1042,6 +1114,10 @@ function enc_invoice_status_badge($status)
     return '<span class="inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ' . esc_attr($item['class']) . '">' . esc_html($item['label']) . '</span>';
 }
 
+/**
+ * Shortcode: [enc_invoice_form]
+ * Renders the invoice submission form for users with permission.
+ */
 add_shortcode('enc_invoice_form', 'enc_invoice_form_shortcode');
 function enc_invoice_form_shortcode()
 {
@@ -1055,6 +1131,10 @@ function enc_invoice_form_shortcode()
     ]);
 }
 
+/**
+ * Shortcode: [enc_company_form]
+ * Renders the company submission form for users with permission.
+ */
 add_shortcode('enc_company_form', 'enc_company_form_shortcode');
 function enc_company_form_shortcode()
 {

@@ -90,8 +90,6 @@ function enc_tracker_setup() {
         KEY due_date (due_date)
     ) $charset_collate;";
 
-
-
     dbDelta($sql_stores);
     dbDelta($sql_incomes);
     dbDelta($sql_withdrawals);

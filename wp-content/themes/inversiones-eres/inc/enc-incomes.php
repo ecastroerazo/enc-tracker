@@ -1,9 +1,27 @@
 <?php
 /**
  * ENC Tracker Incomes Module
+ *
+ * This module handles all logic for displaying, filtering, exporting, adding, editing, and deleting income records for the ENC Tracker system.
+ *
+ * Main features:
+ *  - Render report filters for incomes
+ *  - Export incomes as CSV
+ *  - Display incomes table with summary and running totals
+ *  - Handle add, edit, and delete income actions
+ *  - Provide shortcodes for income forms and editing
  */
+// =============================
+// Report Filter Form Rendering
+// =============================
 
 if (!function_exists('enc_render_report_filters')) {
+    /**
+     * Renders a filter/search form for reports (store, date range, export, etc.)
+     *
+     * @param array $args Filter options and UI settings
+     * @return string HTML output for the filter form
+     */
     function enc_render_report_filters($args = [])
     {
         $defaults = [
@@ -81,6 +99,14 @@ if (!function_exists('enc_render_report_filters')) {
 }
 
 add_action('template_redirect', 'enc_handle_income_export');
+// =============================
+// CSV Export Handler
+// =============================
+
+/**
+ * Handles exporting income records as CSV if the correct GET param is set.
+ * Checks permissions, filters by store/date, and streams the CSV file.
+ */
 function enc_handle_income_export()
 {
     if (!isset($_GET['enc_export']) || $_GET['enc_export'] !== 'incomes') {
@@ -106,6 +132,7 @@ function enc_handle_income_export()
     $params[] = $date_from;
     $params[] = $date_to;
 
+    // Query incomes for export
     $results = $wpdb->get_results($wpdb->prepare(
         "SELECT i.entry_date, s.name as store_name, i.amount, i.notes FROM {$wpdb->prefix}enc_incomes i 
          JOIN {$wpdb->prefix}enc_stores s ON i.store_id = s.id 
@@ -113,6 +140,7 @@ function enc_handle_income_export()
         $params
     ));
 
+    // Format rows for CSV
     $rows = array_map(function ($row) {
         return [
             $row->entry_date,
@@ -122,20 +150,34 @@ function enc_handle_income_export()
         ];
     }, $results);
 
+    // Output CSV
     enc_stream_csv('enc-incomes-' . date('Ymd') . '.csv', ['Date', 'Store', 'Amount', 'Notes'], $rows);
+// =============================
+// Main Incomes View
+// =============================
+
+/**
+ * Main incomes view: displays the income table, summary, filter, and handles view switching.
+ * Handles:
+ *  - Edit mode (delegates to edit shortcode)
+ *  - Success/error messages
+ *  - Filtering and summary
+ *  - Table rendering with running totals
+ *  - Export and add income links
+ */
 }
 
 // Incomes view
 function enc_incomes_view()
 {
-    // Check if we're in edit mode
+    // Check if we're in edit mode (delegates to edit form if so)
     if (isset($_GET['action']) && $_GET['action'] === 'edit' && isset($_GET['id'])) {
         return enc_income_edit_shortcode(['id' => intval($_GET['id'])]);
     }
 
     global $wpdb;
 
-    // Success/error messages
+    // Prepare success/error messages for user feedback
     $messages = '';
     if (isset($_GET['deleted'])) {
         $messages .= '<div class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900">Income deleted successfully!</div>';
@@ -158,11 +200,13 @@ function enc_incomes_view()
     $date_to = enc_parse_date($_GET['date_to'] ?? '', current_time('Y-m-d'));
     $stores = enc_get_stores();
 
+    // URLs and permissions for add/log form
     $base_incomes_url = add_query_arg('tab', 'incomes', get_permalink());
     $log_form_url = add_query_arg('view', 'log', $base_incomes_url);
     $show_form_view = isset($_GET['view']) && $_GET['view'] === 'log';
     $can_add_income = current_user_can('enc_add_income');
 
+    // Show log form view if requested and permitted
     if ($show_form_view && $can_add_income) {
         ob_start();
         ?>
@@ -182,6 +226,7 @@ function enc_incomes_view()
         return ob_get_clean();
     }
 
+    // Build SQL WHERE clause for filtering incomes
     $where = "WHERE 1=1";
     $params = [];
     if ($store_id > 0) {
@@ -192,10 +237,12 @@ function enc_incomes_view()
     $params[] = $date_from;
     $params[] = $date_to;
 
-    $base_income_query = "SELECT i.*, s.name as store_name FROM {$wpdb->prefix}enc_incomes i 
+        // Main query for incomes (with store join)
+        $base_income_query = "SELECT i.*, s.name as store_name FROM {$wpdb->prefix}enc_incomes i 
             JOIN {$wpdb->prefix}enc_stores s ON i.store_id = s.id 
             $where ORDER BY i.entry_date DESC, i.id DESC";
 
+    // Fetch incomes and calculate running totals for display
     $incomes = $wpdb->get_results($wpdb->prepare($base_income_query . ' LIMIT 50', $params));
     $running_totals = [];
     $running_sum = 0;
@@ -211,6 +258,7 @@ function enc_incomes_view()
         $running_totals[$income_item->id] = $running_sum;
     }
 
+    // Calculate summary stats
     $record_count = count($incomes);
     $total_amount = array_sum(array_map(function ($income) {
         return (float) $income->amount;
@@ -219,6 +267,7 @@ function enc_incomes_view()
     $period_start_label = date_i18n('M j, Y', strtotime($date_from));
     $period_end_label = date_i18n('M j, Y', strtotime($date_to));
 
+    // Build filter clear and export URLs
     $filter_clear_url = remove_query_arg(
         ['store_id', 'date_from', 'date_to', 'paged', 'enc_export'],
         add_query_arg('tab', 'incomes', get_permalink())
@@ -377,11 +426,20 @@ function enc_incomes_view()
     return ob_get_clean();
 }
 
-// Income form handling
+
+// =============================
+// Income Form Handling (Add/Edit/Delete)
+// =============================
+
+/**
+ * Handles POST submissions for adding, editing, and deleting incomes.
+ * - Validates permissions and nonces
+ * - Handles redirects and error/success feedback
+ */
 add_action('template_redirect', 'enc_handle_income_forms');
 function enc_handle_income_forms()
 {
-    // Income update submission
+    // Handle income update (edit)
     if (isset($_POST['enc_income_update'])) {
         if (!is_user_logged_in() || !current_user_can('manage_options'))
             return;
@@ -424,7 +482,7 @@ function enc_handle_income_forms()
         exit;
     }
 
-    // Income form submission
+    // Handle new income submission
     if (isset($_POST['enc_income_submit'])) {
         if (!is_user_logged_in() || !current_user_can('enc_add_income'))
             return;
@@ -465,7 +523,7 @@ function enc_handle_income_forms()
         exit;
     }
 
-    // Delete income
+    // Handle delete income action
     if (isset($_GET['action']) && $_GET['action'] === 'delete' && isset($_GET['id']) && $_GET['tab'] === 'incomes') {
         if (!current_user_can('manage_options'))
             return;
@@ -484,11 +542,26 @@ function enc_handle_income_forms()
         exit;
     }
 }
+// =============================
+// Shortcodes for Income Edit and Submission
+// =============================
+
+/**
+ * Shortcode: [enc_income_edit]
+ * Renders the edit form for a specific income record (admin only).
+ *
+ */
 
 // Income edit shortcode [enc_income_edit]
 add_shortcode('enc_income_edit', 'enc_income_edit_shortcode');
 function enc_income_edit_shortcode($atts)
 {
+        // ...existing code...
+    /**
+     * Shortcode: [enc_income_form]
+     * Renders the form for submitting a new income record (for users with permission).
+     *
+     */
     if (!is_user_logged_in() || !current_user_can('manage_options')) {
         return '<p>Access denied.</p>';
     }
@@ -515,7 +588,7 @@ function enc_income_edit_shortcode($atts)
         return '<p>No stores available. Please contact administrator.</p>';
     }
 
-    // Success/error messages
+    // Success/error messages for edit form
     $messages = '';
     if (isset($_GET['updated'])) {
         $messages .= '<div class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900">Income updated successfully!</div>';
@@ -610,6 +683,7 @@ function enc_income_edit_shortcode($atts)
 add_shortcode('enc_income_form', 'enc_income_form_shortcode');
 function enc_income_form_shortcode()
 {
+        // ...existing code...
     if (!is_user_logged_in() || !current_user_can('enc_add_income')) {
         return '<p>Access denied.</p>';
     }
@@ -619,7 +693,7 @@ function enc_income_form_shortcode()
         return '<p>No stores available. Please contact administrator.</p>';
     }
 
-    // Success/error messages
+    // Success/error messages for add form
     $messages = '';
     if (isset($_GET['success'])) {
         $messages .= '<div class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900">Income recorded successfully!</div>';
